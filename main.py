@@ -2,7 +2,7 @@ import sys
 from copy import deepcopy
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QInputDialog, QSizePolicy
+    QVBoxLayout, QHBoxLayout, QGridLayout, QInputDialog, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import QEvent, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF, QRadialGradient
@@ -101,7 +101,7 @@ class PotHistoryDisplay(QWidget):
             6: QColor("#ff69b4"),
             7: QColor("#3f3a4d"),
         }
-        self.setMinimumHeight(94)
+        self.setFixedHeight(112)
 
     def set_values(self, values):
         self.values = values[-30:]
@@ -124,7 +124,7 @@ class PotHistoryDisplay(QWidget):
         grid_width = cols * radius * 2 + (cols - 1) * gap_x
         grid_height = rows * radius * 2 + (rows - 1) * gap_y
         start_x = (self.width() - grid_width) / 2 + radius
-        start_y = (self.height() - grid_height) / 2 + radius
+        start_y = (self.height() - grid_height) / 2 + radius - 6
 
         painter.setPen(QPen(QColor("#334155"), 2))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -163,14 +163,80 @@ class PotHistoryDisplay(QWidget):
             painter.setPen(QPen(QColor("#93c5fd"), 2))
             painter.setBrush(QColor("#1d4ed8"))
             painter.drawEllipse(QRectF(cx - radius, cy - radius, radius * 2, radius * 2))
+            painter.setPen(QPen(QColor("#ffffff"), max(2, int(radius * 0.18))))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawLine(QPointF(cx - radius * 0.48, cy - radius * 0.22), QPointF(cx + radius * 0.32, cy - radius * 0.22))
+            painter.drawLine(QPointF(cx + radius * 0.48, cy + radius * 0.22), QPointF(cx - radius * 0.32, cy + radius * 0.22))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor("#ffffff"))
-            arrow = QPolygonF([
-                QPointF(cx - radius * 0.35, cy - radius * 0.5),
-                QPointF(cx + radius * 0.45, cy),
-                QPointF(cx - radius * 0.35, cy + radius * 0.5),
+            upper_arrow = QPolygonF([
+                QPointF(cx + radius * 0.32, cy - radius * 0.50),
+                QPointF(cx + radius * 0.62, cy - radius * 0.22),
+                QPointF(cx + radius * 0.32, cy + radius * 0.06),
             ])
-            painter.drawPolygon(arrow)
+            lower_arrow = QPolygonF([
+                QPointF(cx - radius * 0.32, cy - radius * 0.06),
+                QPointF(cx - radius * 0.62, cy + radius * 0.22),
+                QPointF(cx - radius * 0.32, cy + radius * 0.50),
+            ])
+            painter.drawPolygon(upper_arrow)
+            painter.drawPolygon(lower_arrow)
+
+
+class BreakDisplay(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.break_score = 0
+        self.highest_breaks = [0, 0]
+
+    def set_values(self, break_score, highest_breaks):
+        self.break_score = break_score
+        self.highest_breaks = highest_breaks[:]
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#111827"))
+        painter.setPen(QPen(QColor("#9ca3af"), 2))
+        painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
+
+        title_font = QFont("Arial", 42)
+        score_font = QFont("Arial", 42)
+        hb_font = QFont("Arial", 28)
+        title_metrics = QFontMetrics(title_font)
+        score_metrics = QFontMetrics(score_font)
+        hb_metrics = QFontMetrics(hb_font)
+
+        gap_between_break_and_score = 4
+        hb_gap = 40
+        title_height = title_metrics.height()
+        score_height = score_metrics.height()
+        center_y = self.height() / 2 - 20
+        group_height = title_height + gap_between_break_and_score + score_height
+        title_top = center_y - group_height / 2
+        score_top = title_top + title_height + gap_between_break_and_score
+        hb_top = score_top + score_height + hb_gap
+
+        painter.setPen(Qt.GlobalColor.white)
+        painter.setFont(title_font)
+        painter.drawText(
+            QRectF(0, title_top, self.width(), title_height),
+            Qt.AlignmentFlag.AlignCenter,
+            "BREAK",
+        )
+        painter.setFont(score_font)
+        painter.drawText(
+            QRectF(0, score_top, self.width(), score_height),
+            Qt.AlignmentFlag.AlignCenter,
+            str(self.break_score),
+        )
+        painter.setFont(hb_font)
+        painter.drawText(
+            QRectF(0, hb_top, self.width(), hb_metrics.height()),
+            Qt.AlignmentFlag.AlignCenter,
+            f"{self.highest_breaks[0]}     HB     {self.highest_breaks[1]}",
+        )
 
 
 class SnookerBoard(QWidget):
@@ -183,6 +249,7 @@ class SnookerBoard(QWidget):
         self.scores = [0, 0]
         self.frames = [0, 0]
         self.break_score = 0
+        self.highest_breaks = [0, 0]
 
         self.reds = 15
         self.colors = {
@@ -264,7 +331,7 @@ class SnookerBoard(QWidget):
         self.right_frames = self.panel_label("0", 90)
 
         self.break_title = self.panel_label("", 32)
-        self.break_label = self.panel_label("BREAK\n0", 32)
+        self.break_label = BreakDisplay()
         self.info_label = self.panel_label("", 32)
         self.points_title = self.panel_label("POINTS", 34)
 
@@ -336,7 +403,7 @@ class SnookerBoard(QWidget):
         controls.setContentsMargins(10, 10, 10, 10)
         controls.setSpacing(8)
 
-        controls_title = QLabel("操作")
+        controls_title = QLabel("CONTROLS")
         controls_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         controls_title.setStyleSheet("font-size: 24px; border: none; background: transparent;")
         controls.addWidget(controls_title)
@@ -376,50 +443,54 @@ class SnookerBoard(QWidget):
             btn.clicked.connect(lambda _, v=value: self.award_foul(v))
             score_buttons.addWidget(btn, 4 + (value - 4) // 2, (value - 4) % 2)
 
-        undo_btn = QPushButton("E 撤回")
-        undo_btn.clicked.connect(self.undo)
-        score_buttons.addWidget(undo_btn, 6, 0)
+        red_plus_btn = QPushButton("Red +1")
+        red_plus_btn.clicked.connect(lambda: self.adjust_reds(1))
+        score_buttons.addWidget(red_plus_btn, 6, 0)
 
-        switch_btn = QPushButton("P 换人")
+        red_minus_btn = QPushButton("Red -1")
+        red_minus_btn.clicked.connect(lambda: self.adjust_reds(-1))
+        score_buttons.addWidget(red_minus_btn, 6, 1)
+
+        undo_btn = QPushButton("E UNDO")
+        undo_btn.clicked.connect(self.undo)
+        score_buttons.addWidget(undo_btn, 7, 0)
+
+        switch_btn = QPushButton("P PLAYER")
         switch_btn.clicked.connect(self.switch_player)
-        score_buttons.addWidget(switch_btn, 6, 1)
+        score_buttons.addWidget(switch_btn, 7, 1)
 
         controls.addLayout(score_buttons)
 
         bottom = QVBoxLayout()
         bottom.setSpacing(8)
 
-        name1_btn = QPushButton("改左边名字")
+        name1_btn = QPushButton("Rename Left")
         name1_btn.clicked.connect(lambda: self.rename_player(0))
         bottom.addWidget(name1_btn)
 
-        name2_btn = QPushButton("改右边名字")
+        name2_btn = QPushButton("Rename Right")
         name2_btn.clicked.connect(lambda: self.rename_player(1))
         bottom.addWidget(name2_btn)
 
-        new_btn = QPushButton("新局")
-        new_btn.clicked.connect(self.new_frame)
-        bottom.addWidget(new_btn)
-
-        frame_left_btn = QPushButton("左方赢一局")
-        frame_left_btn.clicked.connect(lambda: self.add_frame(0))
-        bottom.addWidget(frame_left_btn)
-
-        frame_right_btn = QPushButton("右方赢一局")
-        frame_right_btn.clicked.connect(lambda: self.add_frame(1))
-        bottom.addWidget(frame_right_btn)
-
-        full_btn = QPushButton("全屏")
-        full_btn.clicked.connect(self.toggle_fullscreen)
-        bottom.addWidget(full_btn)
-
-        pause_btn = QPushButton("C 暂停")
-        pause_btn.clicked.connect(self.toggle_timer_pause)
-        bottom.addWidget(pause_btn)
-
-        target_frames_btn = QPushButton("设置局数")
+        target_frames_btn = QPushButton("Set Frames")
         target_frames_btn.clicked.connect(self.set_target_frames)
         bottom.addWidget(target_frames_btn)
+
+        end_frame_btn = QPushButton("End Frame")
+        end_frame_btn.clicked.connect(self.confirm_end_frame)
+        bottom.addWidget(end_frame_btn)
+
+        new_btn = QPushButton("Reset Frame")
+        new_btn.clicked.connect(self.confirm_reset_frame)
+        bottom.addWidget(new_btn)
+
+        reset_match_btn = QPushButton("Reset Match")
+        reset_match_btn.clicked.connect(self.confirm_reset_match)
+        bottom.addWidget(reset_match_btn)
+
+        full_btn = QPushButton("Fullscreen")
+        full_btn.clicked.connect(self.toggle_fullscreen)
+        bottom.addWidget(full_btn)
 
         controls.addLayout(bottom)
         controls.addStretch(1)
@@ -463,9 +534,9 @@ class SnookerBoard(QWidget):
         """)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
+        layout.setSpacing(12)
         layout.addWidget(score_label, 1)
-        layout.addWidget(pot_display)
+        layout.addWidget(pot_display, 0)
         return panel
 
     def create_end_frame_overlay(self):
@@ -492,7 +563,7 @@ class SnookerBoard(QWidget):
 
         prompt_row = QHBoxLayout()
         prompt_row.addStretch(1)
-        self.end_frame_prompt = QLabel("按 3 结束本局")
+        self.end_frame_prompt = QLabel("PRESS 3 TO END FRAME")
         self.end_frame_prompt.setObjectName("endFramePrompt")
         self.end_frame_prompt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prompt_row.addWidget(self.end_frame_prompt)
@@ -540,6 +611,7 @@ class SnookerBoard(QWidget):
             "scores": self.scores[:],
             "frames": self.frames[:],
             "break_score": self.break_score,
+            "highest_breaks": self.highest_breaks[:],
             "reds": self.reds,
             "colors": deepcopy(self.colors),
             "history": self.history[:],
@@ -563,6 +635,7 @@ class SnookerBoard(QWidget):
         self.scores = state["scores"][:]
         self.frames = state["frames"][:]
         self.break_score = state["break_score"]
+        self.highest_breaks = state.get("highest_breaks", [state.get("highest_break", 0), 0])[:]
         self.reds = state["reds"]
         self.colors = deepcopy(state["colors"])
         self.history = state["history"][:]
@@ -595,6 +668,7 @@ class SnookerBoard(QWidget):
                 self.save_state()
                 self.scores[self.current] += freeball_value
                 self.break_score += freeball_value
+                self.update_highest_break()
                 self.history.append(f"FB{freeball_value}")
                 self.append_pot_event(self.current, freeball_value)
                 self.freeball_pending = False
@@ -712,6 +786,13 @@ class SnookerBoard(QWidget):
         self.reset_frame()
         self.update_display()
 
+    def reset_match(self):
+        self.save_state()
+        self.frames = [0, 0]
+        self.highest_breaks = [0, 0]
+        self.reset_frame()
+        self.update_display()
+
     def reset_frame(self):
         self.scores = [0, 0]
         self.break_score = 0
@@ -741,6 +822,28 @@ class SnookerBoard(QWidget):
         self.status_player = self.current
         self.history.append("W")
         self.update_display()
+
+    def confirm_end_frame(self):
+        if self.confirm_action("End Frame", "End this frame?"):
+            self.finish_frame_by_score()
+
+    def confirm_reset_frame(self):
+        if self.confirm_action("Reset Frame", "Reset the current frame?"):
+            self.new_frame()
+
+    def confirm_reset_match(self):
+        if self.confirm_action("Reset Match", "Reset the whole match?"):
+            self.reset_match()
+
+    def confirm_action(self, title, message):
+        reply = QMessageBox.question(
+            self,
+            title,
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     def finish_frame_by_score(self):
         self.save_state()
@@ -781,6 +884,7 @@ class SnookerBoard(QWidget):
     def apply_score(self, value):
         self.scores[self.current] += value
         self.break_score += value
+        self.update_highest_break()
         self.history.append(str(value))
         self.append_pot_event(self.current, value)
 
@@ -858,6 +962,9 @@ class SnookerBoard(QWidget):
     def score_difference(self):
         return abs(self.scores[0] - self.scores[1])
 
+    def update_highest_break(self):
+        self.highest_breaks[self.current] = max(self.highest_breaks[self.current], self.break_score)
+
     def toggle_timer_pause(self):
         self.save_state()
         self.timer_paused = not self.timer_paused
@@ -867,8 +974,8 @@ class SnookerBoard(QWidget):
     def set_target_frames(self):
         frames, ok = QInputDialog.getInt(
             self,
-            "设置局数",
-            "请输入总局数：",
+            "Set Frames",
+            "Enter total frames:",
             self.target_frames,
             1,
             99,
@@ -880,7 +987,7 @@ class SnookerBoard(QWidget):
             self.update_display()
 
     def rename_player(self, index):
-        name, ok = QInputDialog.getText(self, "修改名字", "请输入名字：")
+        name, ok = QInputDialog.getText(self, "Rename Player", "Enter name:")
         if ok and name.strip():
             self.save_state()
             self.players[index] = name.strip().upper()
@@ -910,7 +1017,7 @@ class SnookerBoard(QWidget):
         self.left_pots.set_values(self.pot_history[0])
         self.right_pots.set_values(self.pot_history[1])
 
-        self.break_label.setText(f"BREAK\n{self.break_score}")
+        self.break_label.set_values(self.break_score, self.highest_breaks)
         self.info_label.setText(
             f"REMAINING: {self.remaining_points()}\n"
             f"DIFFERENCE: {self.score_difference()}"
@@ -922,7 +1029,7 @@ class SnookerBoard(QWidget):
 
         active_name_style = """
             font-size: 40px;
-            background-color: #111827;
+            background-color: #172554;
             color: #facc15;
             border: 4px solid #facc15;
             padding: 8px;
@@ -938,7 +1045,7 @@ class SnookerBoard(QWidget):
 
         status_name_style = """
             font-size: 40px;
-            background-color: #111827;
+            background-color: #7f1d1d;
             color: white;
             border: 4px solid #ef4444;
             padding: 8px;
@@ -970,12 +1077,10 @@ class SnookerBoard(QWidget):
         return normal_style
 
     def player_panel_style(self, player, size):
-        active = self.current == player
-        status = self.status_player == player and (self.foul_pending or self.freeball_pending)
         background = "#111827"
-        border = "#ef4444" if status else ("#facc15" if active else "#9ca3af")
-        width = 4 if (active or status) else 2
-        color = "#facc15" if active and not status else "white"
+        border = "#facc15" if self.current == player else "#9ca3af"
+        width = 4 if self.current == player else 2
+        color = "white"
         return f"""
             font-size: {size}px;
             background-color: {background};
@@ -986,10 +1091,8 @@ class SnookerBoard(QWidget):
 
     def player_score_panel_style(self, player):
         background = "#111827"
-        active = self.current == player
-        status = self.status_player == player and (self.foul_pending or self.freeball_pending)
-        border = "#ef4444" if status else ("#facc15" if active else "#9ca3af")
-        width = 4 if (active or status) else 2
+        border = "#facc15" if self.current == player else "#9ca3af"
+        width = 4 if self.current == player else 2
         return f"""
             QWidget#scorePanel {{
                 background-color: {background};

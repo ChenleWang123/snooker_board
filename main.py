@@ -148,7 +148,7 @@ class PotHistoryDisplay(QWidget):
 
         if isinstance(event, tuple) and event[0] == "F":
             BallDisplay.draw_ball(self, painter, cx, cy, radius, QColor("#f8fafc"))
-            painter.setPen(QColor("#111827"))
+            painter.setPen(QColor("#ef4444"))
             font = QFont("Arial", max(9, radius))
             font.setBold(True)
             painter.setFont(font)
@@ -156,6 +156,21 @@ class PotHistoryDisplay(QWidget):
                 QRectF(cx - radius, cy - radius, radius * 2, radius * 2),
                 Qt.AlignmentFlag.AlignCenter,
                 str(event[1]),
+            )
+            return
+
+        if isinstance(event, tuple) and event[0] == "F_PLUS":
+            painter.setPen(QPen(QColor("#ffffff"), 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QRectF(cx - radius, cy - radius, radius * 2, radius * 2))
+            painter.setPen(QColor("#ffffff"))
+            font = QFont("Arial", max(8, int(radius * 0.85)))
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(
+                QRectF(cx - radius, cy - radius, radius * 2, radius * 2),
+                Qt.AlignmentFlag.AlignCenter,
+                f"+{event[1]}",
             )
             return
 
@@ -266,7 +281,7 @@ class SnookerBoard(QWidget):
         self.undo_stack = []
 
         self.seconds = 0
-        self.timer_paused = False
+        self.timer_paused = True
         self.foul_pending = False
         self.freeball_pending = False
         self.end_frame_pending = False
@@ -275,8 +290,9 @@ class SnookerBoard(QWidget):
         self.color_allowed = False
         self.final_red_color_pending = False
         self.next_color_value = 2
-        self.target_frames = 7
+        self.target_frames = 5
         self.controls_width = 300
+        self.control_language = "EN"
 
         self.init_ui()
         self.start_timer()
@@ -341,18 +357,16 @@ class SnookerBoard(QWidget):
         self.right_pots = PotHistoryDisplay()
         self.left_score_panel = self.score_panel(self.left_score, self.left_pots)
         self.right_score_panel = self.score_panel(self.right_score, self.right_pots)
+        self.left_player_panel = self.player_column_panel(self.left_name, self.left_frames, self.left_score_panel)
+        self.right_player_panel = self.player_column_panel(self.right_name, self.right_frames, self.right_score_panel)
 
-        board.addWidget(self.left_name, 0, 0)
+        board.addWidget(self.left_player_panel, 0, 0, 4, 1)
         board.addWidget(self.center_info, 0, 1)
-        board.addWidget(self.right_name, 0, 2)
+        board.addWidget(self.right_player_panel, 0, 2, 4, 1)
 
-        board.addWidget(self.left_frames, 1, 0)
         board.addWidget(self.break_title, 1, 1)
-        board.addWidget(self.right_frames, 1, 2)
 
-        board.addWidget(self.left_score_panel, 2, 0, 2, 1)
         board.addWidget(self.break_label, 2, 1)
-        board.addWidget(self.right_score_panel, 2, 2, 2, 1)
 
         board.addWidget(self.info_label, 3, 1)
 
@@ -403,10 +417,14 @@ class SnookerBoard(QWidget):
         controls.setContentsMargins(10, 10, 10, 10)
         controls.setSpacing(8)
 
-        controls_title = QLabel("CONTROLS")
-        controls_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        controls_title.setStyleSheet("font-size: 24px; border: none; background: transparent;")
-        controls.addWidget(controls_title)
+        self.controls_title = QLabel()
+        self.controls_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.controls_title.setStyleSheet("font-size: 24px; border: none; background: transparent;")
+        controls.addWidget(self.controls_title)
+
+        self.language_btn = QPushButton()
+        self.language_btn.clicked.connect(self.toggle_control_language)
+        controls.addWidget(self.language_btn)
 
         score_buttons = QGridLayout()
         score_buttons.setSpacing(8)
@@ -416,8 +434,8 @@ class SnookerBoard(QWidget):
             btn.clicked.connect(lambda _, v=value: self.add_score(v))
             score_buttons.addWidget(btn, (value - 1) // 2, (value - 1) % 2)
 
-        foul_btn = QPushButton("F FOUL")
-        foul_btn.setStyleSheet("""
+        self.foul_btn = QPushButton()
+        self.foul_btn.setStyleSheet("""
             background-color: #7f1d1d;
             color: white;
             font-size: 22px;
@@ -426,71 +444,57 @@ class SnookerBoard(QWidget):
             border-radius: 8px;
             padding: 12px;
         """)
-        foul_btn.clicked.connect(self.mark_foul)
-        score_buttons.addWidget(foul_btn, 3, 1)
+        self.foul_btn.clicked.connect(self.mark_foul)
+        score_buttons.addWidget(self.foul_btn, 3, 1)
 
-        for value in range(4, 8):
-            btn = QPushButton(f"F+{value}")
-            btn.setStyleSheet("""
-                background-color: #7f1d1d;
-                color: white;
-                font-size: 22px;
-                font-weight: bold;
-                border: 2px solid #dc2626;
-                border-radius: 8px;
-                padding: 12px;
-            """)
-            btn.clicked.connect(lambda _, v=value: self.award_foul(v))
-            score_buttons.addWidget(btn, 4 + (value - 4) // 2, (value - 4) % 2)
+        self.red_plus_btn = QPushButton()
+        self.red_plus_btn.clicked.connect(lambda: self.adjust_reds(1))
+        score_buttons.addWidget(self.red_plus_btn, 4, 0)
 
-        red_plus_btn = QPushButton("Red +1")
-        red_plus_btn.clicked.connect(lambda: self.adjust_reds(1))
-        score_buttons.addWidget(red_plus_btn, 6, 0)
+        self.red_minus_btn = QPushButton()
+        self.red_minus_btn.clicked.connect(lambda: self.adjust_reds(-1))
+        score_buttons.addWidget(self.red_minus_btn, 4, 1)
 
-        red_minus_btn = QPushButton("Red -1")
-        red_minus_btn.clicked.connect(lambda: self.adjust_reds(-1))
-        score_buttons.addWidget(red_minus_btn, 6, 1)
+        self.undo_btn = QPushButton()
+        self.undo_btn.clicked.connect(self.undo)
+        score_buttons.addWidget(self.undo_btn, 5, 0)
 
-        undo_btn = QPushButton("E UNDO")
-        undo_btn.clicked.connect(self.undo)
-        score_buttons.addWidget(undo_btn, 7, 0)
-
-        switch_btn = QPushButton("P PLAYER")
-        switch_btn.clicked.connect(self.switch_player)
-        score_buttons.addWidget(switch_btn, 7, 1)
+        self.switch_btn = QPushButton()
+        self.switch_btn.clicked.connect(self.switch_player)
+        score_buttons.addWidget(self.switch_btn, 5, 1)
 
         controls.addLayout(score_buttons)
 
         bottom = QVBoxLayout()
         bottom.setSpacing(8)
 
-        name1_btn = QPushButton("Rename Left")
-        name1_btn.clicked.connect(lambda: self.rename_player(0))
-        bottom.addWidget(name1_btn)
+        self.name1_btn = QPushButton()
+        self.name1_btn.clicked.connect(lambda: self.rename_player(0))
+        bottom.addWidget(self.name1_btn)
 
-        name2_btn = QPushButton("Rename Right")
-        name2_btn.clicked.connect(lambda: self.rename_player(1))
-        bottom.addWidget(name2_btn)
+        self.name2_btn = QPushButton()
+        self.name2_btn.clicked.connect(lambda: self.rename_player(1))
+        bottom.addWidget(self.name2_btn)
 
-        target_frames_btn = QPushButton("Set Frames")
-        target_frames_btn.clicked.connect(self.set_target_frames)
-        bottom.addWidget(target_frames_btn)
+        self.target_frames_btn = QPushButton()
+        self.target_frames_btn.clicked.connect(self.set_target_frames)
+        bottom.addWidget(self.target_frames_btn)
 
-        end_frame_btn = QPushButton("End Frame")
-        end_frame_btn.clicked.connect(self.confirm_end_frame)
-        bottom.addWidget(end_frame_btn)
+        self.end_frame_btn = QPushButton()
+        self.end_frame_btn.clicked.connect(self.confirm_end_frame)
+        bottom.addWidget(self.end_frame_btn)
 
-        new_btn = QPushButton("Reset Frame")
-        new_btn.clicked.connect(self.confirm_reset_frame)
-        bottom.addWidget(new_btn)
+        self.new_btn = QPushButton()
+        self.new_btn.clicked.connect(self.confirm_reset_frame)
+        bottom.addWidget(self.new_btn)
 
-        reset_match_btn = QPushButton("Reset Match")
-        reset_match_btn.clicked.connect(self.confirm_reset_match)
-        bottom.addWidget(reset_match_btn)
+        self.reset_match_btn = QPushButton()
+        self.reset_match_btn.clicked.connect(self.confirm_reset_match)
+        bottom.addWidget(self.reset_match_btn)
 
-        full_btn = QPushButton("Fullscreen")
-        full_btn.clicked.connect(self.toggle_fullscreen)
-        bottom.addWidget(full_btn)
+        self.full_btn = QPushButton()
+        self.full_btn.clicked.connect(self.toggle_fullscreen)
+        bottom.addWidget(self.full_btn)
 
         controls.addLayout(bottom)
         controls.addStretch(1)
@@ -504,6 +508,7 @@ class SnookerBoard(QWidget):
         self.setMouseTracking(True)
         self.setLayout(root)
         self.create_end_frame_overlay()
+        self.update_control_language()
         self.update_display()
 
     def panel_label(self, text, size):
@@ -517,6 +522,76 @@ class SnookerBoard(QWidget):
             padding: 8px;
         """)
         return label
+
+    def control_texts(self):
+        texts = {
+            "EN": {
+                "language": "EN / DE: EN",
+                "title": "CONTROLS",
+                "foul": "F FOUL",
+                "red_plus": "Red +1",
+                "red_minus": "Red -1",
+                "undo": "UNDO",
+                "switch": "PLAYER",
+                "rename_left": "Rename Left",
+                "rename_right": "Rename Right",
+                "set_frames": "Set Frames",
+                "end_frame": "End Frame",
+                "reset_frame": "Reset Frame",
+                "reset_match": "Reset Match",
+                "fullscreen": "Fullscreen",
+                "set_frames_prompt": "Enter total frames:",
+                "rename_player": "Rename Player",
+                "rename_prompt": "Enter name:",
+                "end_frame_confirm": "End this frame?",
+                "reset_frame_confirm": "Reset the current frame?",
+                "reset_match_confirm": "Reset the whole match?",
+            },
+            "DE": {
+                "language": "EN / DE: DE",
+                "title": "STEUERUNG",
+                "foul": "F FOUL",
+                "red_plus": "Rot +1",
+                "red_minus": "Rot -1",
+                "undo": "ZURÜECK",
+                "switch": "SPIELER",
+                "rename_left": "Links umbenennen",
+                "rename_right": "Rechts umbenennen",
+                "set_frames": "Frames setzen",
+                "end_frame": "Frame beenden",
+                "reset_frame": "Frame zurücksetzen",
+                "reset_match": "Match zurücksetzen",
+                "fullscreen": "Vollbild",
+                "set_frames_prompt": "Gesamtzahl Frames:",
+                "rename_player": "Spieler umbenennen",
+                "rename_prompt": "Name eingeben:",
+                "end_frame_confirm": "Diesen Frame beenden?",
+                "reset_frame_confirm": "Aktuellen Frame zurücksetzen?",
+                "reset_match_confirm": "Ganzes Match zurücksetzen?",
+            },
+        }
+        return texts[self.control_language]
+
+    def update_control_language(self):
+        text = self.control_texts()
+        self.language_btn.setText(text["language"])
+        self.controls_title.setText(text["title"])
+        self.foul_btn.setText(text["foul"])
+        self.red_plus_btn.setText(text["red_plus"])
+        self.red_minus_btn.setText(text["red_minus"])
+        self.undo_btn.setText(text["undo"])
+        self.switch_btn.setText(text["switch"])
+        self.name1_btn.setText(text["rename_left"])
+        self.name2_btn.setText(text["rename_right"])
+        self.target_frames_btn.setText(text["set_frames"])
+        self.end_frame_btn.setText(text["end_frame"])
+        self.new_btn.setText(text["reset_frame"])
+        self.reset_match_btn.setText(text["reset_match"])
+        self.full_btn.setText(text["fullscreen"])
+
+    def toggle_control_language(self):
+        self.control_language = "DE" if self.control_language == "EN" else "EN"
+        self.update_control_language()
 
     def score_panel(self, score_label, pot_display):
         panel = QWidget()
@@ -537,6 +612,17 @@ class SnookerBoard(QWidget):
         layout.setSpacing(12)
         layout.addWidget(score_label, 1)
         layout.addWidget(pot_display, 0)
+        return panel
+
+    def player_column_panel(self, name_label, frames_label, score_panel):
+        panel = QWidget()
+        panel.setObjectName("playerColumn")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(0)
+        layout.addWidget(name_label, 1)
+        layout.addWidget(frames_label, 1)
+        layout.addWidget(score_panel, 4)
         return panel
 
     def create_end_frame_overlay(self):
@@ -720,7 +806,8 @@ class SnookerBoard(QWidget):
         opponent = 1 - self.current
         self.scores[opponent] += value
         self.history.append(f"F:{value}")
-        self.append_pot_event(opponent, ("F", value))
+        self.append_pot_event(self.current, ("F", value))
+        self.append_pot_event(opponent, ("F_PLUS", value))
 
         self.break_score = 0
         self.current = opponent
@@ -771,6 +858,7 @@ class SnookerBoard(QWidget):
         self.history = []
         self.pot_history = [[], []]
         self.seconds = 0
+        self.timer_paused = False
         self.current = 0
         self.can_take_red = True
         self.color_allowed = False
@@ -783,11 +871,16 @@ class SnookerBoard(QWidget):
     def add_frame(self, player):
         self.save_state()
         self.frames[player] += 1
-        self.reset_frame()
-        self.update_display()
+        self.complete_frame(player)
 
     def reset_match(self):
         self.save_state()
+        self.frames = [0, 0]
+        self.highest_breaks = [0, 0]
+        self.reset_frame()
+        self.update_display()
+
+    def start_new_match(self):
         self.frames = [0, 0]
         self.highest_breaks = [0, 0]
         self.reset_frame()
@@ -824,15 +917,18 @@ class SnookerBoard(QWidget):
         self.update_display()
 
     def confirm_end_frame(self):
-        if self.confirm_action("End Frame", "End this frame?"):
+        text = self.control_texts()
+        if self.confirm_action(text["end_frame"], text["end_frame_confirm"]):
             self.finish_frame_by_score()
 
     def confirm_reset_frame(self):
-        if self.confirm_action("Reset Frame", "Reset the current frame?"):
+        text = self.control_texts()
+        if self.confirm_action(text["reset_frame"], text["reset_frame_confirm"]):
             self.new_frame()
 
     def confirm_reset_match(self):
-        if self.confirm_action("Reset Match", "Reset the whole match?"):
+        text = self.control_texts()
+        if self.confirm_action(text["reset_match"], text["reset_match_confirm"]):
             self.reset_match()
 
     def confirm_action(self, title, message):
@@ -849,8 +945,29 @@ class SnookerBoard(QWidget):
         self.save_state()
         winner = 0 if self.scores[0] >= self.scores[1] else 1
         self.frames[winner] += 1
+        self.complete_frame(winner)
+
+    def complete_frame(self, winner):
         self.reset_frame()
         self.update_display()
+        if self.frames[winner] >= self.match_winning_frames():
+            message = QMessageBox(self)
+            message.setWindowTitle("Match Finished")
+            message.setIcon(QMessageBox.Icon.Information)
+            message.setText(
+                f"Congratulations {self.players[winner]}!\n"
+                "You won the match.\n\n"
+                "Highest Breaks:\n"
+                f"{self.players[0]}: {self.highest_breaks[0]}\n"
+                f"{self.players[1]}: {self.highest_breaks[1]}"
+            )
+            message.setStandardButtons(QMessageBox.StandardButton.Ok)
+            message.setStyleSheet("QLabel { font-size: 24px; } QPushButton { font-size: 20px; padding: 8px 24px; }")
+            message.exec()
+            self.start_new_match()
+
+    def match_winning_frames(self):
+        return self.target_frames // 2 + 1
 
     def clear_pending_actions(self):
         self.foul_pending = False
@@ -972,10 +1089,11 @@ class SnookerBoard(QWidget):
         self.update_display()
 
     def set_target_frames(self):
+        text = self.control_texts()
         frames, ok = QInputDialog.getInt(
             self,
-            "Set Frames",
-            "Enter total frames:",
+            text["set_frames"],
+            text["set_frames_prompt"],
             self.target_frames,
             1,
             99,
@@ -987,7 +1105,8 @@ class SnookerBoard(QWidget):
             self.update_display()
 
     def rename_player(self, index):
-        name, ok = QInputDialog.getText(self, "Rename Player", "Enter name:")
+        text = self.control_texts()
+        name, ok = QInputDialog.getText(self, text["rename_player"], text["rename_prompt"])
         if ok and name.strip():
             self.save_state()
             self.players[index] = name.strip().upper()
@@ -1031,7 +1150,8 @@ class SnookerBoard(QWidget):
             font-size: 40px;
             background-color: #172554;
             color: #facc15;
-            border: 4px solid #facc15;
+            border: none;
+            border-bottom: 2px solid #9ca3af;
             padding: 8px;
         """
 
@@ -1039,7 +1159,8 @@ class SnookerBoard(QWidget):
             font-size: 40px;
             background-color: #111827;
             color: white;
-            border: 2px solid #9ca3af;
+            border: none;
+            border-bottom: 2px solid #9ca3af;
             padding: 8px;
         """
 
@@ -1047,7 +1168,8 @@ class SnookerBoard(QWidget):
             font-size: 40px;
             background-color: #7f1d1d;
             color: white;
-            border: 4px solid #ef4444;
+            border: none;
+            border-bottom: 2px solid #9ca3af;
             padding: 8px;
         """
 
@@ -1057,6 +1179,8 @@ class SnookerBoard(QWidget):
         self.right_frames.setStyleSheet(self.player_panel_style(1, 90))
         self.left_score_panel.setStyleSheet(self.player_score_panel_style(0))
         self.right_score_panel.setStyleSheet(self.player_score_panel_style(1))
+        self.left_player_panel.setStyleSheet(self.player_column_style(0))
+        self.right_player_panel.setStyleSheet(self.player_column_style(1))
         self.left_pots.set_background("#0b1020")
         self.right_pots.set_background("#0b1020")
 
@@ -1078,24 +1202,31 @@ class SnookerBoard(QWidget):
 
     def player_panel_style(self, player, size):
         background = "#111827"
-        border = "#facc15" if self.current == player else "#9ca3af"
-        width = 4 if self.current == player else 2
         color = "white"
         return f"""
             font-size: {size}px;
             background-color: {background};
             color: {color};
-            border: {width}px solid {border};
+            border: none;
+            border-bottom: 2px solid #9ca3af;
             padding: 8px;
         """
 
     def player_score_panel_style(self, player):
         background = "#111827"
-        border = "#facc15" if self.current == player else "#9ca3af"
-        width = 4 if self.current == player else 2
         return f"""
             QWidget#scorePanel {{
                 background-color: {background};
+                border: none;
+            }}
+        """
+
+    def player_column_style(self, player):
+        border = "#facc15" if self.current == player else "white"
+        width = 4 if self.current == player else 2
+        return f"""
+            QWidget#playerColumn {{
+                background-color: #111827;
                 border: {width}px solid {border};
             }}
         """

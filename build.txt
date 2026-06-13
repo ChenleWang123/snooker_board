@@ -1,0 +1,2 @@
+cd E:\Programme\Python_Projects\snooker_board
+E:\Programme\Miniconda3\python.exe -m PyInstaller SnookerBoard.spec --noconfirm

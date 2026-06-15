@@ -29,7 +29,8 @@ class BallDisplay(QWidget):
             "pink": QColor("#ff69b4"),
             "black": QColor("#3f3a4d"),
         }
-        self.setMinimumHeight(88)
+        self.font_scale = 1.0
+        self.setMinimumHeight(112)
 
     def set_counts(self, reds, colors):
         self.counts = {
@@ -43,16 +44,20 @@ class BallDisplay(QWidget):
         }
         self.update()
 
+    def set_font_scale(self, scale):
+        self.font_scale = scale
+        self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor("#050505"))
 
         names = ["red", "yellow", "green", "brown", "blue", "pink", "black"]
-        radius = 20
-        gap = 36
-        number_gap = 16
-        font = QFont("Arial", 30)
+        radius = 26
+        gap = 44
+        number_gap = 20
+        font = QFont("Arial", max(1, round(38 * self.font_scale)))
         painter.setFont(font)
         metrics = QFontMetrics(font)
         number_widths = [metrics.horizontalAdvance(str(self.counts[name])) for name in names]
@@ -65,7 +70,7 @@ class BallDisplay(QWidget):
             self.draw_ball(painter, x + radius, center_y, radius, self.ball_colors[name])
             painter.setPen(Qt.GlobalColor.white)
             text_x = x + radius * 2 + number_gap
-            text_rect = QRectF(text_x, center_y - 32, number_widths[index] + 8, 64)
+            text_rect = QRectF(text_x, center_y - 40, number_widths[index] + 12, 80)
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, str(self.counts[name]))
             x += item_widths[index] + gap
 
@@ -92,6 +97,7 @@ class PotHistoryDisplay(QWidget):
         super().__init__()
         self.values = []
         self.background = QColor("#0b1020")
+        self.font_scale = 1.0
         self.ball_colors = {
             1: QColor("#ef3f5d"),
             2: QColor("#facc15"),
@@ -101,7 +107,7 @@ class PotHistoryDisplay(QWidget):
             6: QColor("#ff69b4"),
             7: QColor("#3f3a4d"),
         }
-        self.setFixedHeight(112)
+        self.setFixedHeight(150)
 
     def set_values(self, values):
         self.values = values[-30:]
@@ -111,6 +117,10 @@ class PotHistoryDisplay(QWidget):
         self.background = QColor(color)
         self.update()
 
+    def set_font_scale(self, scale):
+        self.font_scale = scale
+        self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -118,13 +128,13 @@ class PotHistoryDisplay(QWidget):
 
         rows = 3
         cols = 10
-        radius = min(12, max(7, int((self.width() - 28) / (cols * 2 + (cols - 1) * 0.8))))
+        radius = min(17, max(10, int((self.width() - 28) / (cols * 2 + (cols - 1) * 0.8))))
         gap_x = radius * 0.8
-        gap_y = 8
+        gap_y = 12
         grid_width = cols * radius * 2 + (cols - 1) * gap_x
         grid_height = rows * radius * 2 + (rows - 1) * gap_y
         start_x = (self.width() - grid_width) / 2 + radius
-        start_y = (self.height() - grid_height) / 2 + radius - 6
+        start_y = (self.height() - grid_height) / 2 + radius - 4
 
         painter.setPen(QPen(QColor("#334155"), 2))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -149,7 +159,7 @@ class PotHistoryDisplay(QWidget):
         if isinstance(event, tuple) and event[0] == "F":
             BallDisplay.draw_ball(self, painter, cx, cy, radius, QColor("#f8fafc"))
             painter.setPen(QColor("#ef4444"))
-            font = QFont("Arial", max(9, radius))
+            font = QFont("Arial", max(9, round(radius * self.font_scale)))
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(
@@ -164,7 +174,7 @@ class PotHistoryDisplay(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(QRectF(cx - radius, cy - radius, radius * 2, radius * 2))
             painter.setPen(QColor("#ffffff"))
-            font = QFont("Arial", max(8, int(radius * 0.85)))
+            font = QFont("Arial", max(8, round(radius * 0.85 * self.font_scale)))
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(
@@ -203,35 +213,39 @@ class BreakDisplay(QWidget):
         super().__init__()
         self.break_score = 0
         self.highest_breaks = [0, 0]
+        self.font_scale = 1.0
 
     def set_values(self, break_score, highest_breaks):
         self.break_score = break_score
         self.highest_breaks = highest_breaks[:]
         self.update()
 
+    def set_font_scale(self, scale):
+        self.font_scale = scale
+        self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#111827"))
-        painter.setPen(QPen(QColor("#9ca3af"), 2))
-        painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
+        painter.fillRect(self.rect(), QColor("#0b1020"))
 
-        title_font = QFont("Arial", 42)
-        score_font = QFont("Arial", 42)
-        hb_font = QFont("Arial", 28)
+        title_font = QFont("Arial", max(1, round(36 * self.font_scale)))
+        score_font = QFont("Arial", max(1, round(85 * self.font_scale)))
+        hb_font = QFont("Arial", max(1, round(34 * self.font_scale)))
         title_metrics = QFontMetrics(title_font)
         score_metrics = QFontMetrics(score_font)
         hb_metrics = QFontMetrics(hb_font)
 
         gap_between_break_and_score = 4
-        hb_gap = 40
+        hb_gap = 24
         title_height = title_metrics.height()
         score_height = score_metrics.height()
-        center_y = self.height() / 2 - 20
+        center_y = self.height() / 2 - 34
         group_height = title_height + gap_between_break_and_score + score_height
         title_top = center_y - group_height / 2
         score_top = title_top + title_height + gap_between_break_and_score
         hb_top = score_top + score_height + hb_gap
+        hb_top = min(hb_top, self.height() - hb_metrics.height() - 18)
 
         painter.setPen(Qt.GlobalColor.white)
         painter.setFont(title_font)
@@ -250,8 +264,10 @@ class BreakDisplay(QWidget):
         painter.drawText(
             QRectF(0, hb_top, self.width(), hb_metrics.height()),
             Qt.AlignmentFlag.AlignCenter,
-            f"{self.highest_breaks[0]}     HB     {self.highest_breaks[1]}",
+            f"{self.highest_breaks[0]}   HB   {self.highest_breaks[1]}",
         )
+        painter.setPen(QPen(QColor("#9ca3af"), 2))
+        painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
 
 class SnookerBoard(QWidget):
@@ -293,6 +309,9 @@ class SnookerBoard(QWidget):
         self.target_frames = 5
         self.controls_width = 300
         self.control_language = "EN"
+        self.main_font_scale = 1.0
+        self.base_window_width = 1700
+        self.base_window_height = 960
 
         self.init_ui()
         self.start_timer()
@@ -300,7 +319,7 @@ class SnookerBoard(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("Snooker Board")
-        self.resize(1500, 850)
+        self.resize(self.base_window_width, self.base_window_height)
 
         self.setStyleSheet("""
             QWidget {
@@ -309,14 +328,14 @@ class SnookerBoard(QWidget):
                 font-family: Arial;
             }
             QLabel {
-                background-color: #111827;
+                background-color: #0b1020;
                 color: white;
                 border: 2px solid #9ca3af;
             }
             QPushButton {
                 background-color: #1f2937;
                 color: white;
-                font-size: 22px;
+                font-size: 26px;
                 font-weight: bold;
                 border: 2px solid #6b7280;
                 border-radius: 8px;
@@ -330,72 +349,56 @@ class SnookerBoard(QWidget):
         main = QVBoxLayout()
         main.setSpacing(4)
 
-        title = QLabel("IN PLAY")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setFixedHeight(100)
-        title.setStyleSheet("font-size: 44px; border: none; background: transparent; letter-spacing: 6px;")
-        main.addWidget(title)
+        self.title_label = QLabel("IN PLAY")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setFixedHeight(112)
+        main.addWidget(self.title_label)
 
-        board = QGridLayout()
-        board.setSpacing(8)
+        self.board_layout = QGridLayout()
+        self.board_layout.setSpacing(8)
 
-        self.left_name = self.panel_label(self.players[0], 40)
-        self.right_name = self.panel_label(self.players[1], 40)
-        self.center_info = self.panel_label("", 32)
+        self.left_name = self.panel_label(self.players[0], 64)
+        self.right_name = self.panel_label(self.players[1], 64)
+        self.center_info = self.panel_label("", 40)
 
-        self.left_frames = self.panel_label("0", 90)
-        self.right_frames = self.panel_label("0", 90)
+        self.left_frames = self.panel_label("0", 64)
+        self.right_frames = self.panel_label("0", 64)
 
-        self.break_title = self.panel_label("", 32)
+        self.break_title = self.panel_label("", 40)
         self.break_label = BreakDisplay()
-        self.info_label = self.panel_label("", 32)
+        self.info_label = self.panel_label("", 36)
         self.points_title = self.panel_label("POINTS", 34)
 
-        self.left_score = self.panel_label("0", 110)
-        self.right_score = self.panel_label("0", 110)
+        self.left_score = self.panel_label("0", 130)
+        self.right_score = self.panel_label("0", 130)
         self.left_pots = PotHistoryDisplay()
         self.right_pots = PotHistoryDisplay()
         self.left_score_panel = self.score_panel(self.left_score, self.left_pots)
         self.right_score_panel = self.score_panel(self.right_score, self.right_pots)
         self.left_player_panel = self.player_column_panel(self.left_name, self.left_frames, self.left_score_panel)
         self.right_player_panel = self.player_column_panel(self.right_name, self.right_frames, self.right_score_panel)
+        self.center_panel = self.center_column_panel(self.center_info, self.break_title, self.break_label, self.info_label)
 
-        board.addWidget(self.left_player_panel, 0, 0, 4, 1)
-        board.addWidget(self.center_info, 0, 1)
-        board.addWidget(self.right_player_panel, 0, 2, 4, 1)
+        self.board_layout.addWidget(self.left_player_panel, 0, 0, 4, 1)
+        self.board_layout.addWidget(self.center_panel, 0, 1, 4, 1)
+        self.board_layout.addWidget(self.right_player_panel, 0, 2, 4, 1)
 
-        board.addWidget(self.break_title, 1, 1)
+        self.board_layout.setRowStretch(0, 2)
+        self.board_layout.setRowStretch(1, 2)
+        self.board_layout.setRowStretch(2, 4)
+        self.board_layout.setRowStretch(3, 1)
 
-        board.addWidget(self.break_label, 2, 1)
-
-        board.addWidget(self.info_label, 3, 1)
-
-        board.setColumnStretch(0, 4)
-        board.setColumnStretch(1, 2)
-        board.setColumnStretch(2, 4)
-        board.setRowStretch(0, 1)
-        board.setRowStretch(1, 1)
-        board.setRowStretch(2, 3)
-        board.setRowStretch(3, 1)
-
-        main.addLayout(board, 1)
+        main.addLayout(self.board_layout, 1)
 
         self.history_label = QLabel("")
         self.history_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.history_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.history_label.setMinimumWidth(0)
-        self.history_label.setFixedHeight(44)
-        self.history_label.setStyleSheet("""
-            font-size: 24px;
-            background-color: white;
-            color: black;
-            padding: 6px;
-            border: 2px solid #9ca3af;
-        """)
+        self.history_label.setFixedHeight(58)
         main.addWidget(self.history_label)
 
         self.balls_label = BallDisplay()
-        self.balls_label.setFixedHeight(96)
+        self.balls_label.setFixedHeight(126)
         self.balls_label.setStyleSheet("""
             background-color: #050505;
             border: 2px solid #9ca3af;
@@ -438,7 +441,7 @@ class SnookerBoard(QWidget):
         self.foul_btn.setStyleSheet("""
             background-color: #7f1d1d;
             color: white;
-            font-size: 22px;
+            font-size: 26px;
             font-weight: bold;
             border: 2px solid #dc2626;
             border-radius: 8px;
@@ -508,15 +511,48 @@ class SnookerBoard(QWidget):
         self.setMouseTracking(True)
         self.setLayout(root)
         self.create_end_frame_overlay()
+        self.apply_main_font_scale()
         self.update_control_language()
         self.update_display()
+
+    def main_size(self, size):
+        return max(1, round(size * self.main_font_scale))
+
+    def apply_main_font_scale(self):
+        self.title_label.setFixedHeight(self.main_size(112))
+        self.history_label.setFixedHeight(self.main_size(58))
+        self.balls_label.setFixedHeight(self.main_size(126))
+        self.left_pots.setFixedHeight(self.main_size(150))
+        self.right_pots.setFixedHeight(self.main_size(150))
+
+        center_stretch = max(2, round(2 + (self.main_font_scale - 1.0) * 5))
+        self.board_layout.setColumnStretch(0, 4)
+        self.board_layout.setColumnStretch(1, center_stretch)
+        self.board_layout.setColumnStretch(2, 4)
+
+        self.title_label.setStyleSheet(
+            f"font-size: {self.main_size(56)}px; border: none; background: transparent; letter-spacing: 6px;"
+        )
+        self.left_score.setStyleSheet(self.score_label_style())
+        self.right_score.setStyleSheet(self.score_label_style())
+        self.history_label.setStyleSheet(f"""
+            font-size: {self.main_size(32)}px;
+            background-color: white;
+            color: black;
+            padding: 6px;
+            border: 2px solid #9ca3af;
+        """)
+        self.break_label.set_font_scale(self.main_font_scale)
+        self.balls_label.set_font_scale(self.main_font_scale)
+        self.left_pots.set_font_scale(self.main_font_scale)
+        self.right_pots.set_font_scale(self.main_font_scale)
 
     def panel_label(self, text, size):
         label = QLabel(text)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setStyleSheet(f"""
-            font-size: {size}px;
-            background-color: #111827;
+            font-size: {self.main_size(size)}px;
+            background-color: #0b1020;
             color: white;
             border: 2px solid #9ca3af;
             padding: 8px;
@@ -593,23 +629,26 @@ class SnookerBoard(QWidget):
         self.control_language = "DE" if self.control_language == "EN" else "EN"
         self.update_control_language()
 
-    def score_panel(self, score_label, pot_display):
-        panel = QWidget()
-        panel.setObjectName("scorePanel")
-        score_label.setStyleSheet("""
-            font-size: 132px;
+    def score_label_style(self):
+        return f"""
+            font-size: {self.main_size(195)}px;
             background-color: transparent;
             color: white;
             border: none;
             padding: 8px;
-        """)
+        """
+
+    def score_panel(self, score_label, pot_display):
+        panel = QWidget()
+        panel.setObjectName("scorePanel")
+        score_label.setStyleSheet(self.score_label_style())
         pot_display.setStyleSheet("""
             background-color: transparent;
             border: none;
         """)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(12)
+        layout.setSpacing(16)
         layout.addWidget(score_label, 1)
         layout.addWidget(pot_display, 0)
         return panel
@@ -620,9 +659,34 @@ class SnookerBoard(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(0)
-        layout.addWidget(name_label, 1)
-        layout.addWidget(frames_label, 1)
-        layout.addWidget(score_panel, 4)
+        for widget in (name_label, frames_label, score_panel):
+            widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+            widget.setMinimumHeight(0)
+        layout.addWidget(name_label, 16)
+        layout.addWidget(frames_label, 24)
+        layout.addWidget(score_panel, 60)
+        layout.setStretch(0, 16)
+        layout.setStretch(1, 24)
+        layout.setStretch(2, 60)
+        return panel
+
+    def center_column_panel(self, timer_label, frames_label, break_display, info_label):
+        panel = QWidget()
+        panel.setObjectName("centerColumn")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(0)
+        for widget in (timer_label, frames_label, break_display, info_label):
+            widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+            widget.setMinimumHeight(0)
+        layout.addWidget(timer_label, 16)
+        layout.addWidget(frames_label, 24)
+        layout.addWidget(break_display, 42)
+        layout.addWidget(info_label, 18)
+        layout.setStretch(0, 16)
+        layout.setStretch(1, 24)
+        layout.setStretch(2, 42)
+        layout.setStretch(3, 18)
         return panel
 
     def create_end_frame_overlay(self):
@@ -633,11 +697,11 @@ class SnookerBoard(QWidget):
                 background-color: rgba(0, 0, 0, 170);
             }
             QLabel#endFramePrompt {
-                background-color: #111827;
+                background-color: #0b1020;
                 color: #facc15;
                 border: 5px solid #facc15;
                 border-radius: 8px;
-                font-size: 52px;
+                font-size: 64px;
                 font-weight: bold;
                 padding: 38px 64px;
             }
@@ -676,18 +740,21 @@ class SnookerBoard(QWidget):
         seconds = self.seconds % 60
         self.center_info.setText(f"{minutes:02d} {seconds:02d}\nMIN  SEC")
         timer_style = """
-            font-size: 32px;
+            font-size: %spx;
             background-color: #7f1d1d;
             color: white;
-            border: 4px solid #ef4444;
+            border: none;
+            border-bottom: 2px solid #9ca3af;
             padding: 8px;
         """ if self.timer_paused else """
-            font-size: 32px;
-            background-color: #111827;
+            font-size: %spx;
+            background-color: #0b1020;
             color: white;
-            border: 2px solid #9ca3af;
+            border: none;
+            border-bottom: 2px solid #9ca3af;
             padding: 8px;
         """
+        timer_style = timer_style % self.main_size(42)
         self.center_info.setStyleSheet(timer_style)
 
     def save_state(self):
@@ -932,14 +999,14 @@ class SnookerBoard(QWidget):
             self.reset_match()
 
     def confirm_action(self, title, message):
-        reply = QMessageBox.question(
-            self,
-            title,
-            message,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setText(message)
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        self.style_message_dialog(dialog)
+        return dialog.exec() == QMessageBox.StandardButton.Yes
 
     def finish_frame_by_score(self):
         self.save_state()
@@ -962,7 +1029,7 @@ class SnookerBoard(QWidget):
                 f"{self.players[1]}: {self.highest_breaks[1]}"
             )
             message.setStandardButtons(QMessageBox.StandardButton.Ok)
-            message.setStyleSheet("QLabel { font-size: 24px; } QPushButton { font-size: 20px; padding: 8px 24px; }")
+            self.style_message_dialog(message)
             message.exec()
             self.start_new_match()
 
@@ -993,7 +1060,7 @@ class SnookerBoard(QWidget):
 
         if self.reds > 0:
             if value == 1:
-                return True
+                return not self.color_allowed
             return self.color_allowed and 2 <= value <= 7
 
         return value == self.next_color_value
@@ -1090,27 +1157,96 @@ class SnookerBoard(QWidget):
 
     def set_target_frames(self):
         text = self.control_texts()
-        frames, ok = QInputDialog.getInt(
-            self,
-            text["set_frames"],
-            text["set_frames_prompt"],
-            self.target_frames,
-            1,
-            99,
-            1,
-        )
-        if ok:
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle(text["set_frames"])
+        dialog.setLabelText(text["set_frames_prompt"])
+        dialog.setInputMode(QInputDialog.InputMode.IntInput)
+        dialog.setIntRange(1, 99)
+        dialog.setIntStep(1)
+        dialog.setIntValue(self.target_frames)
+        self.style_input_dialog(dialog)
+        if dialog.exec():
             self.save_state()
-            self.target_frames = frames
+            self.target_frames = dialog.intValue()
             self.update_display()
 
     def rename_player(self, index):
         text = self.control_texts()
-        name, ok = QInputDialog.getText(self, text["rename_player"], text["rename_prompt"])
-        if ok and name.strip():
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle(text["rename_player"])
+        dialog.setLabelText(text["rename_prompt"])
+        dialog.setInputMode(QInputDialog.InputMode.TextInput)
+        self.style_input_dialog(dialog)
+        if dialog.exec() and dialog.textValue().strip():
             self.save_state()
-            self.players[index] = name.strip().upper()
+            self.players[index] = dialog.textValue().strip().upper()
             self.update_display()
+
+    def style_input_dialog(self, dialog):
+        dialog.resize(560, 300)
+        dialog.setStyleSheet("""
+            QInputDialog {
+                background-color: #0b1020;
+                color: white;
+            }
+            QLabel {
+                font-size: 32px;
+                color: white;
+                background-color: transparent;
+                border: none;
+            }
+            QLineEdit, QSpinBox {
+                font-size: 32px;
+                color: white;
+                background-color: #111827;
+                border: 3px solid #9ca3af;
+                padding: 8px;
+                min-height: 52px;
+            }
+            QPushButton {
+                font-size: 34px;
+                font-weight: bold;
+                color: white;
+                background-color: #1f2937;
+                border: 3px solid #6b7280;
+                border-radius: 8px;
+                padding: 12px 24px;
+                min-width: 130px;
+                min-height: 64px;
+            }
+            QPushButton:hover {
+                background-color: #374151;
+            }
+        """)
+
+    def style_message_dialog(self, dialog):
+        dialog.resize(560, 300)
+        dialog.setStyleSheet("""
+            QMessageBox {
+                background-color: #0b1020;
+                color: white;
+            }
+            QLabel {
+                font-size: 32px;
+                color: white;
+                background-color: transparent;
+                border: none;
+            }
+            QPushButton {
+                font-size: 34px;
+                font-weight: bold;
+                color: white;
+                background-color: #1f2937;
+                border: 3px solid #6b7280;
+                border-radius: 8px;
+                padding: 12px 24px;
+                min-width: 130px;
+                min-height: 64px;
+            }
+            QPushButton:hover {
+                background-color: #374151;
+            }
+        """)
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
@@ -1147,40 +1283,43 @@ class SnookerBoard(QWidget):
         self.balls_label.set_counts(self.reds, self.colors)
 
         active_name_style = """
-            font-size: 40px;
+            font-size: %spx;
             background-color: #172554;
             color: #facc15;
             border: none;
             border-bottom: 2px solid #9ca3af;
             padding: 8px;
-        """
+        """ % self.main_size(64)
 
         normal_name_style = """
-            font-size: 40px;
-            background-color: #111827;
+            font-size: %spx;
+            background-color: #0b1020;
             color: white;
             border: none;
             border-bottom: 2px solid #9ca3af;
             padding: 8px;
-        """
+        """ % self.main_size(64)
 
         status_name_style = """
-            font-size: 40px;
+            font-size: %spx;
             background-color: #7f1d1d;
             color: white;
             border: none;
             border-bottom: 2px solid #9ca3af;
             padding: 8px;
-        """
+        """ % self.main_size(45)
 
         self.left_name.setStyleSheet(self.player_label_style(0, active_name_style, normal_name_style, status_name_style))
         self.right_name.setStyleSheet(self.player_label_style(1, active_name_style, normal_name_style, status_name_style))
-        self.left_frames.setStyleSheet(self.player_panel_style(0, 90))
-        self.right_frames.setStyleSheet(self.player_panel_style(1, 90))
+        self.left_frames.setStyleSheet(self.player_panel_style(0, 140))
+        self.right_frames.setStyleSheet(self.player_panel_style(1, 140))
         self.left_score_panel.setStyleSheet(self.player_score_panel_style(0))
         self.right_score_panel.setStyleSheet(self.player_score_panel_style(1))
         self.left_player_panel.setStyleSheet(self.player_column_style(0))
         self.right_player_panel.setStyleSheet(self.player_column_style(1))
+        self.center_panel.setStyleSheet(self.center_column_style())
+        self.break_title.setStyleSheet(self.center_child_style(46, True))
+        self.info_label.setStyleSheet(self.center_child_style(34, False))
         self.left_pots.set_background("#0b1020")
         self.right_pots.set_background("#0b1020")
 
@@ -1201,10 +1340,10 @@ class SnookerBoard(QWidget):
         return normal_style
 
     def player_panel_style(self, player, size):
-        background = "#111827"
+        background = "#0b1020"
         color = "white"
         return f"""
-            font-size: {size}px;
+            font-size: {self.main_size(size)}px;
             background-color: {background};
             color: {color};
             border: none;
@@ -1213,7 +1352,7 @@ class SnookerBoard(QWidget):
         """
 
     def player_score_panel_style(self, player):
-        background = "#111827"
+        background = "#0b1020"
         return f"""
             QWidget#scorePanel {{
                 background-color: {background};
@@ -1226,9 +1365,28 @@ class SnookerBoard(QWidget):
         width = 4 if self.current == player else 2
         return f"""
             QWidget#playerColumn {{
-                background-color: #111827;
+                background-color: #0b1020;
                 border: {width}px solid {border};
             }}
+        """
+
+    def center_column_style(self):
+        return """
+            QWidget#centerColumn {
+                background-color: #0b1020;
+                border: 2px solid white;
+            }
+        """
+
+    def center_child_style(self, size, divider):
+        bottom_border = "border-bottom: 2px solid #9ca3af;" if divider else "border: none;"
+        return f"""
+            font-size: {self.main_size(size)}px;
+            background-color: #0b1020;
+            color: white;
+            border: none;
+            {bottom_border}
+            padding: 8px;
         """
 
     def player_status(self, player):
@@ -1279,8 +1437,24 @@ class SnookerBoard(QWidget):
         self.controls_animation.setEndValue(width)
         self.controls_animation.start()
 
+    def adjust_main_font_scale(self, amount):
+        self.main_font_scale = max(0.7, min(1.7, round(self.main_font_scale + amount, 2)))
+        if not self.isFullScreen():
+            self.resize(self.main_size(self.base_window_width), self.main_size(self.base_window_height))
+        self.apply_main_font_scale()
+        self.update_display()
+
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+                self.adjust_main_font_scale(0.1)
+                event.accept()
+                return
+            if key == Qt.Key.Key_Minus:
+                self.adjust_main_font_scale(-0.1)
+                event.accept()
+                return
 
         if Qt.Key.Key_1 <= key <= Qt.Key.Key_7:
             self.add_score(key - Qt.Key.Key_0)

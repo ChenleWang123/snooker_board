@@ -1,3 +1,4 @@
+import os
 import sys
 from copy import deepcopy
 from PyQt6.QtWidgets import (
@@ -5,7 +6,15 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QInputDialog, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import QEvent, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter, QPen, QPolygonF, QRadialGradient
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QKeyEvent, QPainter, QPen, QPolygonF, QRadialGradient
+
+
+ICON_FILE = "icons8-snooker-66.ico"
+
+
+def resource_path(relative_path):
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
 
 
 class BallDisplay(QWidget):
@@ -236,7 +245,7 @@ class BreakDisplay(QWidget):
         score_metrics = QFontMetrics(score_font)
         hb_metrics = QFontMetrics(hb_font)
 
-        gap_between_break_and_score = 4
+        gap_between_break_and_score = -6
         hb_gap = 24
         title_height = title_metrics.height()
         score_height = score_metrics.height()
@@ -281,6 +290,7 @@ class SnookerBoard(QWidget):
         self.frames = [0, 0]
         self.break_score = 0
         self.highest_breaks = [0, 0]
+        self.match_highest_breaks = [0, 0]
 
         self.reds = 15
         self.colors = {
@@ -310,8 +320,6 @@ class SnookerBoard(QWidget):
         self.controls_width = 300
         self.control_language = "EN"
         self.main_font_scale = 1.0
-        self.base_window_width = 1700
-        self.base_window_height = 960
 
         self.init_ui()
         self.start_timer()
@@ -319,7 +327,8 @@ class SnookerBoard(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("Snooker Board")
-        self.resize(self.base_window_width, self.base_window_height)
+        self.setWindowIcon(QIcon(resource_path(ICON_FILE)))
+        self.resize(1700, 960)
 
         self.setStyleSheet("""
             QWidget {
@@ -765,6 +774,7 @@ class SnookerBoard(QWidget):
             "frames": self.frames[:],
             "break_score": self.break_score,
             "highest_breaks": self.highest_breaks[:],
+            "match_highest_breaks": self.match_highest_breaks[:],
             "reds": self.reds,
             "colors": deepcopy(self.colors),
             "history": self.history[:],
@@ -789,6 +799,7 @@ class SnookerBoard(QWidget):
         self.frames = state["frames"][:]
         self.break_score = state["break_score"]
         self.highest_breaks = state.get("highest_breaks", [state.get("highest_break", 0), 0])[:]
+        self.match_highest_breaks = state.get("match_highest_breaks", [0, 0])[:]
         self.reds = state["reds"]
         self.colors = deepcopy(state["colors"])
         self.history = state["history"][:]
@@ -913,6 +924,7 @@ class SnookerBoard(QWidget):
 
         self.scores = [0, 0]
         self.break_score = 0
+        self.highest_breaks = [0, 0]
         self.reds = 15
         self.colors = {
             "yellow": 1,
@@ -944,18 +956,21 @@ class SnookerBoard(QWidget):
         self.save_state()
         self.frames = [0, 0]
         self.highest_breaks = [0, 0]
+        self.match_highest_breaks = [0, 0]
         self.reset_frame()
         self.update_display()
 
     def start_new_match(self):
         self.frames = [0, 0]
         self.highest_breaks = [0, 0]
+        self.match_highest_breaks = [0, 0]
         self.reset_frame()
         self.update_display()
 
     def reset_frame(self):
         self.scores = [0, 0]
         self.break_score = 0
+        self.highest_breaks = [0, 0]
         self.reds = 15
         self.colors = {
             "yellow": 1,
@@ -1015,6 +1030,7 @@ class SnookerBoard(QWidget):
         self.complete_frame(winner)
 
     def complete_frame(self, winner):
+        self.record_completed_frame_highest_breaks()
         self.reset_frame()
         self.update_display()
         if self.frames[winner] >= self.match_winning_frames():
@@ -1025,8 +1041,8 @@ class SnookerBoard(QWidget):
                 f"Congratulations {self.players[winner]}!\n"
                 "You won the match.\n\n"
                 "Highest Breaks:\n"
-                f"{self.players[0]}: {self.highest_breaks[0]}\n"
-                f"{self.players[1]}: {self.highest_breaks[1]}"
+                f"{self.players[0]}: {self.match_highest_breaks[0]}\n"
+                f"{self.players[1]}: {self.match_highest_breaks[1]}"
             )
             message.setStandardButtons(QMessageBox.StandardButton.Ok)
             self.style_message_dialog(message)
@@ -1035,6 +1051,13 @@ class SnookerBoard(QWidget):
 
     def match_winning_frames(self):
         return self.target_frames // 2 + 1
+
+    def record_completed_frame_highest_breaks(self):
+        for player in range(2):
+            self.match_highest_breaks[player] = max(
+                self.match_highest_breaks[player],
+                self.highest_breaks[player],
+            )
 
     def clear_pending_actions(self):
         self.foul_pending = False
@@ -1439,14 +1462,20 @@ class SnookerBoard(QWidget):
 
     def adjust_main_font_scale(self, amount):
         self.main_font_scale = max(0.7, min(1.7, round(self.main_font_scale + amount, 2)))
-        if not self.isFullScreen():
-            self.resize(self.main_size(self.base_window_width), self.main_size(self.base_window_height))
         self.apply_main_font_scale()
         self.update_display()
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if key == Qt.Key.Key_L:
+                self.rename_player(0)
+                event.accept()
+                return
+            if key == Qt.Key.Key_R:
+                self.rename_player(1)
+                event.accept()
+                return
             if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
                 self.adjust_main_font_scale(0.1)
                 event.accept()
@@ -1486,6 +1515,7 @@ class SnookerBoard(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(resource_path(ICON_FILE)))
     window = SnookerBoard()
     window.show()
     sys.exit(app.exec())

@@ -3,7 +3,8 @@ import sys
 from copy import deepcopy
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QInputDialog, QMessageBox, QSizePolicy
+    QVBoxLayout, QHBoxLayout, QGridLayout, QInputDialog, QMessageBox, QSizePolicy,
+    QDialog, QHeaderView, QTableWidget, QTableWidgetItem
 )
 from PyQt6.QtCore import QEvent, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QKeyEvent, QPainter, QPen, QPolygonF, QRadialGradient
@@ -13,6 +14,7 @@ ICON_FILE = "icons8-snooker-66.ico"
 
 
 def resource_path(relative_path):
+    # PyInstaller extracts bundled files into _MEIPASS at runtime.
     base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
     return os.path.join(base_path, relative_path)
 
@@ -161,6 +163,7 @@ class PotHistoryDisplay(QWidget):
             self.draw_event(painter, event, cx, cy, radius)
 
     def draw_event(self, painter, event, cx, cy, radius):
+        # Pot history accepts normal balls, foul markers, awarded foul points, and player switches.
         if isinstance(event, int):
             BallDisplay.draw_ball(self, painter, cx, cy, radius, self.ball_colors.get(event, QColor("#ffffff")))
             return
@@ -245,6 +248,7 @@ class BreakDisplay(QWidget):
         score_metrics = QFontMetrics(score_font)
         hb_metrics = QFontMetrics(hb_font)
 
+        # Keep BREAK and its number visually grouped, with highest breaks below.
         gap_between_break_and_score = -6
         hb_gap = 24
         title_height = title_metrics.height()
@@ -279,6 +283,29 @@ class BreakDisplay(QWidget):
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
 
+class StarValueWidget(QWidget):
+    def __init__(self, value):
+        super().__init__()
+        self.value = str(value)
+        self.value_label = QLabel(self.value, self)
+        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.value_label.setStyleSheet("font-size: 36px; color: white; background: transparent; border: none;")
+        self.star_label = QLabel("★", self)
+        self.star_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.star_label.setStyleSheet("font-size: 32px; color: white; background: transparent; border: none;")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.value_label.setGeometry(self.rect())
+        metrics = QFontMetrics(self.value_label.font())
+        value_width = metrics.horizontalAdvance(self.value)
+        star_width = self.star_label.sizeHint().width()
+        star_height = self.star_label.sizeHint().height()
+        star_x = int(self.width() / 2 + value_width / 2 + 10)
+        star_y = int((self.height() - star_height) / 2)
+        self.star_label.setGeometry(star_x, star_y, star_width, star_height)
+
+
 class SnookerBoard(QWidget):
     def __init__(self):
         super().__init__()
@@ -291,6 +318,9 @@ class SnookerBoard(QWidget):
         self.break_score = 0
         self.highest_breaks = [0, 0]
         self.match_highest_breaks = [0, 0]
+        self.frame_stats = self.empty_stats()
+        self.match_stats = self.empty_stats()
+        self.current_break_over_20_counted = False
 
         self.reds = 15
         self.colors = {
@@ -312,7 +342,6 @@ class SnookerBoard(QWidget):
         self.freeball_pending = False
         self.end_frame_pending = False
         self.status_player = None
-        self.can_take_red = True
         self.color_allowed = False
         self.final_red_color_pending = False
         self.next_color_value = 2
@@ -324,6 +353,29 @@ class SnookerBoard(QWidget):
         self.init_ui()
         self.start_timer()
         QApplication.instance().installEventFilter(self)
+
+    def empty_stats(self):
+        return {
+            "total_points": [0, 0],
+            "best_frame_score": [0, 0],
+            "fouls_made": [0, 0],
+            "foul_points_given": [0, 0],
+            "reds_potted": [0, 0],
+            "colors_potted": [0, 0],
+            "breaks_20_plus": [[], []],
+        }
+
+    def normalize_stats(self, stats):
+        normalized = self.empty_stats()
+        for key, default_values in normalized.items():
+            values = stats.get(key, default_values)
+            for player in range(2):
+                if key == "breaks_20_plus":
+                    value = values[player] if player < len(values) else []
+                    normalized[key][player] = value[:] if isinstance(value, list) else []
+                else:
+                    normalized[key][player] = values[player] if player < len(values) else 0
+        return normalized
 
     def init_ui(self):
         self.setWindowTitle("Snooker Board")
@@ -376,7 +428,6 @@ class SnookerBoard(QWidget):
         self.break_title = self.panel_label("", 40)
         self.break_label = BreakDisplay()
         self.info_label = self.panel_label("", 36)
-        self.points_title = self.panel_label("POINTS", 34)
 
         self.left_score = self.panel_label("0", 130)
         self.right_score = self.panel_label("0", 130)
@@ -528,6 +579,7 @@ class SnookerBoard(QWidget):
         return max(1, round(size * self.main_font_scale))
 
     def apply_main_font_scale(self):
+        # Ctrl +/- scales only the main board. The side controls keep their fixed size.
         self.title_label.setFixedHeight(self.main_size(112))
         self.history_label.setFixedHeight(self.main_size(58))
         self.balls_label.setFixedHeight(self.main_size(126))
@@ -775,6 +827,9 @@ class SnookerBoard(QWidget):
             "break_score": self.break_score,
             "highest_breaks": self.highest_breaks[:],
             "match_highest_breaks": self.match_highest_breaks[:],
+            "frame_stats": deepcopy(self.frame_stats),
+            "match_stats": deepcopy(self.match_stats),
+            "current_break_over_20_counted": self.current_break_over_20_counted,
             "reds": self.reds,
             "colors": deepcopy(self.colors),
             "history": self.history[:],
@@ -785,7 +840,6 @@ class SnookerBoard(QWidget):
             "freeball_pending": self.freeball_pending,
             "end_frame_pending": self.end_frame_pending,
             "status_player": self.status_player,
-            "can_take_red": self.can_take_red,
             "color_allowed": self.color_allowed,
             "final_red_color_pending": self.final_red_color_pending,
             "next_color_value": self.next_color_value,
@@ -800,6 +854,9 @@ class SnookerBoard(QWidget):
         self.break_score = state["break_score"]
         self.highest_breaks = state.get("highest_breaks", [state.get("highest_break", 0), 0])[:]
         self.match_highest_breaks = state.get("match_highest_breaks", [0, 0])[:]
+        self.frame_stats = self.normalize_stats(deepcopy(state.get("frame_stats", self.empty_stats())))
+        self.match_stats = self.normalize_stats(deepcopy(state.get("match_stats", self.empty_stats())))
+        self.current_break_over_20_counted = state.get("current_break_over_20_counted", False)
         self.reds = state["reds"]
         self.colors = deepcopy(state["colors"])
         self.history = state["history"][:]
@@ -810,13 +867,13 @@ class SnookerBoard(QWidget):
         self.freeball_pending = state["freeball_pending"]
         self.end_frame_pending = state["end_frame_pending"]
         self.status_player = state["status_player"]
-        self.can_take_red = state["can_take_red"]
         self.color_allowed = state.get("color_allowed", False)
         self.final_red_color_pending = state.get("final_red_color_pending", False)
         self.next_color_value = state["next_color_value"]
         self.target_frames = state.get("target_frames", self.target_frames)
 
     def add_score(self, value):
+        # Foul/freeball/end-frame modes intercept number keys before normal scoring.
         if self.foul_pending:
             if value == 1:
                 self.adjust_reds(-1)
@@ -831,8 +888,10 @@ class SnookerBoard(QWidget):
             if value == freeball_value:
                 self.save_state()
                 self.scores[self.current] += freeball_value
+                self.frame_stats["total_points"][self.current] += freeball_value
                 self.break_score += freeball_value
                 self.update_highest_break()
+                self.update_break_milestones()
                 self.history.append(f"FB{freeball_value}")
                 self.append_pot_event(self.current, freeball_value)
                 self.freeball_pending = False
@@ -881,13 +940,18 @@ class SnookerBoard(QWidget):
 
         self.save_state()
 
+        # Foul points go to the opponent, but each side gets its own visual marker.
         opponent = 1 - self.current
         self.scores[opponent] += value
+        self.frame_stats["total_points"][opponent] += value
+        self.frame_stats["fouls_made"][self.current] += 1
+        self.frame_stats["foul_points_given"][self.current] += value
         self.history.append(f"F:{value}")
         self.append_pot_event(self.current, ("F", value))
         self.append_pot_event(opponent, ("F_PLUS", value))
 
         self.break_score = 0
+        self.current_break_over_20_counted = False
         self.current = opponent
         self.foul_pending = False
         self.freeball_pending = False
@@ -903,6 +967,7 @@ class SnookerBoard(QWidget):
 
         self.current = 1 - self.current
         self.break_score = 0
+        self.current_break_over_20_counted = False
         self.history.append("P")
         self.color_allowed = False
         self.final_red_color_pending = False
@@ -925,6 +990,8 @@ class SnookerBoard(QWidget):
         self.scores = [0, 0]
         self.break_score = 0
         self.highest_breaks = [0, 0]
+        self.frame_stats = self.empty_stats()
+        self.current_break_over_20_counted = False
         self.reds = 15
         self.colors = {
             "yellow": 1,
@@ -939,7 +1006,6 @@ class SnookerBoard(QWidget):
         self.seconds = 0
         self.timer_paused = False
         self.current = 0
-        self.can_take_red = True
         self.color_allowed = False
         self.final_red_color_pending = False
         self.next_color_value = 2
@@ -947,16 +1013,14 @@ class SnookerBoard(QWidget):
 
         self.update_display()
 
-    def add_frame(self, player):
-        self.save_state()
-        self.frames[player] += 1
-        self.complete_frame(player)
-
     def reset_match(self):
         self.save_state()
         self.frames = [0, 0]
         self.highest_breaks = [0, 0]
         self.match_highest_breaks = [0, 0]
+        self.frame_stats = self.empty_stats()
+        self.match_stats = self.empty_stats()
+        self.current_break_over_20_counted = False
         self.reset_frame()
         self.update_display()
 
@@ -964,6 +1028,9 @@ class SnookerBoard(QWidget):
         self.frames = [0, 0]
         self.highest_breaks = [0, 0]
         self.match_highest_breaks = [0, 0]
+        self.frame_stats = self.empty_stats()
+        self.match_stats = self.empty_stats()
+        self.current_break_over_20_counted = False
         self.reset_frame()
         self.update_display()
 
@@ -971,6 +1038,8 @@ class SnookerBoard(QWidget):
         self.scores = [0, 0]
         self.break_score = 0
         self.highest_breaks = [0, 0]
+        self.frame_stats = self.empty_stats()
+        self.current_break_over_20_counted = False
         self.reds = 15
         self.colors = {
             "yellow": 1,
@@ -984,7 +1053,6 @@ class SnookerBoard(QWidget):
         self.pot_history = [[], []]
         self.seconds = 0
         self.current = 0
-        self.can_take_red = True
         self.color_allowed = False
         self.final_red_color_pending = False
         self.next_color_value = 2
@@ -1031,32 +1099,37 @@ class SnookerBoard(QWidget):
 
     def complete_frame(self, winner):
         self.record_completed_frame_highest_breaks()
+        self.record_completed_frame_stats()
         self.reset_frame()
         self.update_display()
         if self.frames[winner] >= self.match_winning_frames():
-            message = QMessageBox(self)
-            message.setWindowTitle("Match Finished")
-            message.setIcon(QMessageBox.Icon.Information)
-            message.setText(
-                f"Congratulations {self.players[winner]}!\n"
-                "You won the match.\n\n"
-                "Highest Breaks:\n"
-                f"{self.players[0]}: {self.match_highest_breaks[0]}\n"
-                f"{self.players[1]}: {self.match_highest_breaks[1]}"
-            )
-            message.setStandardButtons(QMessageBox.StandardButton.Ok)
-            self.style_message_dialog(message)
-            message.exec()
+            self.show_match_summary(winner)
             self.start_new_match()
 
     def match_winning_frames(self):
         return self.target_frames // 2 + 1
 
     def record_completed_frame_highest_breaks(self):
+        # The center HB resets every frame; match HB survives until the match is reset.
         for player in range(2):
             self.match_highest_breaks[player] = max(
                 self.match_highest_breaks[player],
                 self.highest_breaks[player],
+            )
+
+    def record_completed_frame_stats(self):
+        for key, values in self.frame_stats.items():
+            if key == "best_frame_score":
+                continue
+            for player in range(2):
+                if isinstance(values[player], list):
+                    self.match_stats[key][player].extend(values[player])
+                else:
+                    self.match_stats[key][player] += values[player]
+        for player in range(2):
+            self.match_stats["best_frame_score"][player] = max(
+                self.match_stats["best_frame_score"][player],
+                self.scores[player],
             )
 
     def clear_pending_actions(self):
@@ -1078,20 +1151,28 @@ class SnookerBoard(QWidget):
         self.append_pot_event(player, "P")
 
     def is_legal_score(self, value):
+        # Reds may be recorded multiple times for one shot; colors still need at least one red first.
         if self.final_red_color_pending:
             return 2 <= value <= 7
 
         if self.reds > 0:
             if value == 1:
-                return not self.color_allowed
+                return True
             return self.color_allowed and 2 <= value <= 7
 
         return value == self.next_color_value
 
     def apply_score(self, value):
+        # Update score state first, then move the legal-next-ball state machine forward.
         self.scores[self.current] += value
+        self.frame_stats["total_points"][self.current] += value
+        if value == 1:
+            self.frame_stats["reds_potted"][self.current] += 1
+        else:
+            self.frame_stats["colors_potted"][self.current] += 1
         self.break_score += value
         self.update_highest_break()
+        self.update_break_milestones()
         self.history.append(str(value))
         self.append_pot_event(self.current, value)
 
@@ -1119,7 +1200,6 @@ class SnookerBoard(QWidget):
         self.save_state()
         self.reds = max(0, min(15, self.reds + amount))
         if self.reds > 0:
-            self.can_take_red = True
             self.color_allowed = False
             self.final_red_color_pending = False
         else:
@@ -1171,6 +1251,16 @@ class SnookerBoard(QWidget):
 
     def update_highest_break(self):
         self.highest_breaks[self.current] = max(self.highest_breaks[self.current], self.break_score)
+
+    def update_break_milestones(self):
+        if self.break_score < 20:
+            return
+        breaks = self.frame_stats["breaks_20_plus"][self.current]
+        if self.current_break_over_20_counted and breaks:
+            breaks[-1] = self.break_score
+            return
+        breaks.append(self.break_score)
+        self.current_break_over_20_counted = True
 
     def toggle_timer_pause(self):
         self.save_state()
@@ -1270,6 +1360,188 @@ class SnookerBoard(QWidget):
                 background-color: #374151;
             }
         """)
+
+    def show_match_summary(self, winner):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Match Finished")
+        dialog.setWindowIcon(QIcon(resource_path(ICON_FILE)))
+        dialog.setModal(True)
+        summary_language = {"value": "EN"}
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(44, 18, 44, 24)
+        layout.setSpacing(12)
+
+        top_row = QHBoxLayout()
+        title = QLabel()
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("""
+            font-size: 58px;
+            font-weight: bold;
+            color: #facc15;
+            background-color: transparent;
+            border: none;
+        """)
+        language_button = QPushButton("EN / DE: EN")
+        language_button.setFixedWidth(190)
+        language_button.setStyleSheet("""
+            QPushButton {
+                font-size: 24px;
+                font-weight: bold;
+                color: white;
+                background-color: #1f2937;
+                border: 3px solid #6b7280;
+                border-radius: 8px;
+                padding: 8px 18px;
+                min-width: 170px;
+                min-height: 50px;
+            }
+            QPushButton:hover {
+                background-color: #374151;
+            }
+        """)
+        left_balance = QWidget()
+        left_balance.setFixedWidth(language_button.width())
+        top_row.addWidget(left_balance)
+        top_row.addWidget(title, 1)
+        top_row.addWidget(language_button)
+        layout.addLayout(top_row)
+
+        break_lists = [
+            ", ".join(str(value) for value in self.match_stats["breaks_20_plus"][0]) or "-",
+            ", ".join(str(value) for value in self.match_stats["breaks_20_plus"][1]) or "-",
+        ]
+        balls_potted = [
+            self.match_stats["reds_potted"][0] + self.match_stats["colors_potted"][0],
+            self.match_stats["reds_potted"][1] + self.match_stats["colors_potted"][1],
+        ]
+
+        row_keys = [
+            ("total_points", str(self.match_stats["total_points"][0]), str(self.match_stats["total_points"][1])),
+            ("balls_potted", str(balls_potted[0]), str(balls_potted[1])),
+            ("highest_break", str(self.match_highest_breaks[0]), str(self.match_highest_breaks[1])),
+            ("best_frame_score", str(self.match_stats["best_frame_score"][0]), str(self.match_stats["best_frame_score"][1])),
+            ("fouls_made", str(self.match_stats["fouls_made"][0]), str(self.match_stats["fouls_made"][1])),
+            ("foul_points", str(self.match_stats["foul_points_given"][0]), str(self.match_stats["foul_points_given"][1])),
+            ("breaks_20_plus", break_lists[0], break_lists[1]),
+        ]
+        labels = {
+            "EN": {
+                "wins": "WINS !",
+                "total_points": "Total Points",
+                "balls_potted": "Balls Potted",
+                "highest_break": "Highest Break",
+                "best_frame_score": "Best Frame Score",
+                "fouls_made": "Fouls Made",
+                "foul_points": "Foul Points",
+                "breaks_20_plus": "20+ Breaks",
+            },
+            "DE": {
+                "wins": "GEWINNT !",
+                "total_points": "Gesamtpunkte",
+                "balls_potted": "Gelochte Bälle",
+                "highest_break": "Hoechstes Break",
+                "best_frame_score": "Bester Frame-Score",
+                "fouls_made": "Fouls",
+                "foul_points": "Foulpunkte",
+                "breaks_20_plus": "20+ Breaks",
+            },
+        }
+
+        table = QTableWidget(len(row_keys), 3)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setFixedHeight(70)
+        table.setFixedHeight(70 + len(row_keys) * 70 + 8)
+
+        def refresh_summary_table():
+            language = summary_language["value"]
+            language_button.setText(f"EN / DE: {language}")
+            title.setText(f"🏆 {self.players[winner]} {labels[language]['wins']}")
+            table.setHorizontalHeaderLabels([self.players[0], f"{self.frames[0]}:{self.frames[1]}", self.players[1]])
+            for row_index, (label_key, left_value, right_value) in enumerate(row_keys):
+                row_values = (left_value, labels[language][label_key], right_value)
+                for col_index, value in enumerate(row_values):
+                    if table.cellWidget(row_index, col_index):
+                        table.removeCellWidget(row_index, col_index)
+                    if label_key == "highest_break" and col_index in (0, 2):
+                        table.setItem(row_index, col_index, QTableWidgetItem(""))
+                        table.setCellWidget(row_index, col_index, StarValueWidget(value))
+                        continue
+                    item = QTableWidgetItem(value)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    table.setItem(row_index, col_index, item)
+                table.setRowHeight(row_index, 70)
+
+        def toggle_summary_language():
+            summary_language["value"] = "DE" if summary_language["value"] == "EN" else "EN"
+            refresh_summary_table()
+
+        language_button.clicked.connect(toggle_summary_language)
+        refresh_summary_table()
+
+        table.setStyleSheet("""
+            QTableWidget {
+                background-color: #0b1020;
+                color: white;
+                gridline-color: #64748b;
+                border: 3px solid #9ca3af;
+                font-size: 36px;
+            }
+            QHeaderView::section {
+                background-color: #172554;
+                color: white;
+                font-size: 38px;
+                font-weight: bold;
+                border: 2px solid #9ca3af;
+                padding: 6px;
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+        """)
+        layout.addWidget(table, 0)
+
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(dialog.accept)
+        ok_button.setDefault(True)
+        ok_button.setAutoDefault(True)
+        ok_button.setStyleSheet("""
+            QPushButton {
+                font-size: 38px;
+                font-weight: bold;
+                color: white;
+                background-color: #1f2937;
+                border: 3px solid #6b7280;
+                border-radius: 8px;
+                padding: 10px 44px;
+                min-width: 170px;
+                min-height: 62px;
+            }
+            QPushButton:hover {
+                background-color: #374151;
+            }
+        """)
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(ok_button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        dialog.setStyleSheet("QDialog { background-color: #0b1020; }")
+        dialog.keyPressEvent = lambda event: dialog.accept() if event.key() in (
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+        ) else QDialog.keyPressEvent(dialog, event)
+        dialog.showFullScreen()
+        dialog.exec()
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
@@ -1435,6 +1707,13 @@ class SnookerBoard(QWidget):
         if hasattr(self, "end_frame_overlay"):
             self.end_frame_overlay.setGeometry(self.rect())
 
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.toggle_fullscreen()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def update_end_frame_overlay(self):
         if self.end_frame_pending:
             self.end_frame_overlay.setGeometry(self.rect())
@@ -1468,6 +1747,7 @@ class SnookerBoard(QWidget):
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            text = event.text()
             if key == Qt.Key.Key_L:
                 self.rename_player(0)
                 event.accept()
@@ -1476,11 +1756,11 @@ class SnookerBoard(QWidget):
                 self.rename_player(1)
                 event.accept()
                 return
-            if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal) or text in ("+", "*"):
                 self.adjust_main_font_scale(0.1)
                 event.accept()
                 return
-            if key == Qt.Key.Key_Minus:
+            if key == Qt.Key.Key_Minus or text == "-":
                 self.adjust_main_font_scale(-0.1)
                 event.accept()
                 return
@@ -1502,9 +1782,6 @@ class SnookerBoard(QWidget):
 
         elif key == Qt.Key.Key_C:
             self.toggle_timer_pause()
-
-        elif key == Qt.Key.Key_V:
-            self.toggle_fullscreen()
 
         elif key == Qt.Key.Key_F11:
             self.toggle_fullscreen()
